@@ -15,7 +15,7 @@ Requires: cryptography  (pip install cryptography)
           tkinter ships with the standard CPython installer.
 """
 
-!@from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import secrets
