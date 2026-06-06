@@ -25,14 +25,18 @@ import com.example.pablo.ui.theme.PabloTheme
 /**
  * CONTROL screen — adjust the radio and enter data to send.
  *
- * Right now every value lives only in this screen (local "state") and the
- * buttons don't talk to any hardware yet. Later this becomes a ViewModel that
- * sends commands to the real SDR.
+ * `isConnected` is passed IN from the app shell (state hoisting): this screen
+ * doesn't own that fact, it just reacts to it. Frequency/message are local to
+ * this screen because nothing else needs them.
  */
 @Composable
-fun ControlScreen(modifier: Modifier = Modifier) {
+fun ControlScreen(
+    isConnected: Boolean,
+    modifier: Modifier = Modifier
+) {
     var frequency by remember { mutableStateOf("145.500") }
     var message by remember { mutableStateOf("") }
+    var lastAction by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -41,6 +45,13 @@ fun ControlScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Control", style = MaterialTheme.typography.headlineMedium)
+
+        if (!isConnected) {
+            Text(
+                "Not connected — open Settings and tap Connect first.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
 
         OutlinedTextField(
             value = frequency,
@@ -57,12 +68,28 @@ fun ControlScreen(modifier: Modifier = Modifier) {
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { /* TODO: send the message to the radio */ }) {
+            Button(
+                // Disabled until connected and there's something to send.
+                enabled = isConnected && message.isNotBlank(),
+                onClick = {
+                    lastAction = "Sent \"$message\" on $frequency MHz"
+                    message = ""
+                    // TODO: actually transmit this to the radio.
+                }
+            ) {
                 Text("Send")
             }
-            OutlinedButton(onClick = { /* TODO: start voice input */ }) {
+            OutlinedButton(
+                onClick = { lastAction = "Voice input isn't wired up yet." }
+                // TODO: start Android voice input here.
+            ) {
                 Text("Voice")
             }
+        }
+
+        // Shows the result of the last button press, if any.
+        lastAction?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -70,11 +97,15 @@ fun ControlScreen(modifier: Modifier = Modifier) {
 /**
  * MONITOR screen — a read-only view of the radio and network status.
  *
- * These values are hard-coded placeholders for now. Later they update live
- * from the radio while it's operating.
+ * It reflects the shared connection state passed in from the app shell.
+ * The signal/mode values are still placeholders until real hardware is wired up.
  */
 @Composable
-fun MonitorScreen(modifier: Modifier = Modifier) {
+fun MonitorScreen(
+    isConnected: Boolean,
+    radioAddress: String,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -82,10 +113,10 @@ fun MonitorScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Monitor", style = MaterialTheme.typography.headlineMedium)
-        StatusRow(label = "Radio", value = "Disconnected")
-        StatusRow(label = "Network", value = "—")
-        StatusRow(label = "Signal", value = "0 dBm")
-        StatusRow(label = "Mode", value = "Idle")
+        StatusRow(label = "Radio", value = if (isConnected) "Connected" else "Disconnected")
+        StatusRow(label = "Network", value = if (isConnected) radioAddress else "—")
+        StatusRow(label = "Signal", value = if (isConnected) "-72 dBm" else "0 dBm")
+        StatusRow(label = "Mode", value = if (isConnected) "Listening" else "Idle")
     }
 }
 
@@ -104,12 +135,18 @@ private fun StatusRow(label: String, value: String) {
 /**
  * SETTINGS screen — connection settings.
  *
- * This is the ONLY screen whose values we will later SAVE (so they survive
- * closing the app). The radio itself stays passive and stores no data.
+ * The address and connection state are HOISTED (owned by the app shell and
+ * passed in), so the Monitor screen sees the same values. This screen reports
+ * user actions back up via the `onAddressChange` / `onToggleConnection` callbacks.
  */
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
-    var address by remember { mutableStateOf("192.168.1.100") }
+fun SettingsScreen(
+    radioAddress: String,
+    onAddressChange: (String) -> Unit,
+    isConnected: Boolean,
+    onToggleConnection: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var autoConnect by remember { mutableStateOf(false) }
 
     Column(
@@ -121,9 +158,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
         OutlinedTextField(
-            value = address,
-            onValueChange = { address = it },
+            value = radioAddress,
+            onValueChange = onAddressChange,
             label = { Text("Radio address") },
+            // Don't allow editing the address while a connection is live.
+            enabled = !isConnected,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -136,26 +175,38 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Switch(checked = autoConnect, onCheckedChange = { autoConnect = it })
         }
 
-        Button(onClick = { /* TODO: connect to the radio */ }) {
-            Text("Connect")
+        Button(onClick = onToggleConnection) {
+            Text(if (isConnected) "Disconnect" else "Connect")
         }
+
+        Text(
+            text = if (isConnected) "Connected to $radioAddress" else "Not connected",
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun ControlScreenPreview() {
-    PabloTheme { ControlScreen() }
+    PabloTheme { ControlScreen(isConnected = false) }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun MonitorScreenPreview() {
-    PabloTheme { MonitorScreen() }
+    PabloTheme { MonitorScreen(isConnected = true, radioAddress = "192.168.1.100") }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun SettingsScreenPreview() {
-    PabloTheme { SettingsScreen() }
+    PabloTheme {
+        SettingsScreen(
+            radioAddress = "192.168.1.100",
+            onAddressChange = {},
+            isConnected = false,
+            onToggleConnection = {}
+        )
+    }
 }

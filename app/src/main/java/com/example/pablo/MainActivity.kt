@@ -37,6 +37,10 @@ class MainActivity : ComponentActivity() {
 fun PabloApp() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.CONTROL) }
 
+    // Shared state, "hoisted" here so every screen sees the same values.
+    var radioAddress by rememberSaveable { mutableStateOf("192.168.1.100") }
+    var isConnected by rememberSaveable { mutableStateOf(false) }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach {
@@ -57,9 +61,24 @@ fun PabloApp() {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
             val screenModifier = Modifier.padding(innerPadding)
             when (currentDestination) {
-                AppDestinations.CONTROL -> ControlScreen(screenModifier)
-                AppDestinations.MONITOR -> MonitorScreen(screenModifier)
-                AppDestinations.SETTINGS -> SettingsScreen(screenModifier)
+                AppDestinations.CONTROL -> ControlScreen(
+                    isConnected = isConnected,
+                    modifier = screenModifier
+                )
+
+                AppDestinations.MONITOR -> MonitorScreen(
+                    isConnected = isConnected,
+                    radioAddress = radioAddress,
+                    modifier = screenModifier
+                )
+
+                AppDestinations.SETTINGS -> SettingsScreen(
+                    radioAddress = radioAddress,
+                    onAddressChange = { radioAddress = it },
+                    isConnected = isConnected,
+                    onToggleConnection = { isConnected = !isConnected },
+                    modifier = screenModifier
+                )
             }
         }
     }
