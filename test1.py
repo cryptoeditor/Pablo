@@ -28,6 +28,15 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
+# Windows terminals often default to a legacy codepage (cp1252) that can't
+# render the emoji used below. Switch the console to UTF-8 so the spy flavor
+# survives; degrade gracefully if the stream doesn't support reconfigure.
+for _stream in (sys.stdout, sys.stdin):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 # --- Tunable security parameters -------------------------------------------
 KEY_LEN = 32          # 32 bytes = 256-bit key -> AES-256
 SALT_LEN = 16
