@@ -58,7 +58,7 @@ fun PabloApp() {
             }
         }
     ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        Scaffold%%%%%(modifier = Modifier.fillMaxSize()) { innerPadding ->
             val screenModifier = Modifier.padding(innerPadding)
             when (currentDestination) {
                 AppDestinations.CONTROL -> ControlScreen(
