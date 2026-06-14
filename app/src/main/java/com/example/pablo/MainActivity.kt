@@ -17,10 +17,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
@@ -48,6 +51,21 @@ fun PabloApp() {
     // Shared state, "hoisted" here so every screen sees the same values.
     var radioAddress by rememberSaveable { mutableStateOf("192.168.1.100") }
     var isConnected by rememberSaveable { mutableStateOf(false) }
+    var scanIntervalSeconds by rememberSaveable { mutableStateOf(15) }
+    var contacts by remember { mutableStateOf(emptyList<RadioContact>()) }
+
+    // Background sampling loop: while connected, take a signal "snapshot" every
+    // few seconds. Restarts automatically when connection or interval changes.
+    LaunchedEffect(isConnected, scanIntervalSeconds) {
+        if (isConnected) {
+            while (true) {
+                contacts = sampleNearbyRadios()
+                delay(scanIntervalSeconds * 1000L)
+            }
+        } else {
+            contacts = emptyList()
+        }
+    }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -86,12 +104,16 @@ fun PabloApp() {
             when (currentDestination) {
                 AppDestinations.CONTROL -> ControlScreen(
                     isConnected = isConnected,
+                    scanIntervalSeconds = scanIntervalSeconds,
+                    onScanIntervalChange = { scanIntervalSeconds = it },
                     modifier = screenModifier
                 )
 
                 AppDestinations.MONITOR -> MonitorScreen(
                     isConnected = isConnected,
                     radioAddress = radioAddress,
+                    contacts = contacts,
+                    scanIntervalSeconds = scanIntervalSeconds,
                     modifier = screenModifier
                 )
 

@@ -1,6 +1,8 @@
 package com.example.pablo
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -31,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.pablo.ui.theme.PabloTheme
+import kotlin.math.roundToInt
 
 // Status colors reused across the app.
 private val ConnectedGreen = Color(0xFF2E9E5B)
@@ -71,6 +75,8 @@ fun ConnectionPill(isConnected: Boolean) {
 @Composable
 fun ControlScreen(
     isConnected: Boolean,
+    scanIntervalSeconds: Int,
+    onScanIntervalChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var frequency by remember { mutableStateOf("145.500") }
@@ -136,6 +142,29 @@ fun ControlScreen(
                 }
             }
         }
+
+        // Controls how often the Monitor screen samples nearby signals.
+        ElevatedCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Scan interval: $scanIntervalSeconds s",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = scanIntervalSeconds.toFloat(),
+                    onValueChange = { onScanIntervalChange(it.roundToInt()) },
+                    valueRange = 5f..60f
+                )
+                Text(
+                    "How often the Monitor map samples nearby radios.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -146,11 +175,14 @@ fun ControlScreen(
 fun MonitorScreen(
     isConnected: Boolean,
     radioAddress: String,
+    contacts: List<RadioContact>,
+    scanIntervalSeconds: Int,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -180,6 +212,30 @@ fun MonitorScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        // The RF map: nearby radios plotted around the user.
+        ElevatedCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Nearby radios", style = MaterialTheme.typography.titleMedium)
+                if (isConnected) {
+                    SignalRadar(contacts = contacts, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        "Sampling every $scanIntervalSeconds s · simulated data",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        "Connect to scan for nearby radios.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -279,13 +335,26 @@ private fun StatusRow(
 @Preview(showBackground = true)
 @Composable
 private fun ControlScreenPreview() {
-    PabloTheme { ControlScreen(isConnected = false) }
+    PabloTheme {
+        ControlScreen(
+            isConnected = false,
+            scanIntervalSeconds = 15,
+            onScanIntervalChange = {}
+        )
+    }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun MonitorScreenPreview() {
-    PabloTheme { MonitorScreen(isConnected = true, radioAddress = "192.168.1.100") }
+    PabloTheme {
+        MonitorScreen(
+            isConnected = true,
+            radioAddress = "192.168.1.100",
+            contacts = sampleNearbyRadios(),
+            scanIntervalSeconds = 15
+        )
+    }
 }
 
 @Preview(showBackground = true)
