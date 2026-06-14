@@ -1,14 +1,22 @@
 package com.example.pablo
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,16 +26,47 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.pablo.ui.theme.PabloTheme
 
+// Status colors reused across the app.
+private val ConnectedGreen = Color(0xFF2E9E5B)
+private val DisconnectedRed = Color(0xFFC2453F)
+
+/**
+ * A small rounded "Online / Offline" badge with a colored dot.
+ * Shown in the top bar so the connection state is always visible.
+ */
+@Composable
+fun ConnectionPill(isConnected: Boolean) {
+    val dotColor = if (isConnected) ConnectedGreen else DisconnectedRed
+    val label = if (isConnected) "Online" else "Offline"
+
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .background(dotColor, CircleShape)
+            )
+            Text(label, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
 /**
  * CONTROL screen — adjust the radio and enter data to send.
- *
- * `isConnected` is passed IN from the app shell (state hoisting): this screen
- * doesn't own that fact, it just reacts to it. Frequency/message are local to
- * this screen because nothing else needs them.
  */
 @Composable
 fun ControlScreen(
@@ -44,61 +83,64 @@ fun ControlScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Control", style = MaterialTheme.typography.headlineMedium)
+        ScreenTitle("Control")
 
         if (!isConnected) {
             Text(
                 "Not connected — open Settings and tap Connect first.",
+                color = DisconnectedRed,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
 
-        OutlinedTextField(
-            value = frequency,
-            onValueChange = { frequency = it },
-            label = { Text("Frequency (MHz)") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        ElevatedCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = frequency,
+                    onValueChange = { frequency = it },
+                    label = { Text("Frequency (MHz)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-        OutlinedTextField(
-            value = message,
-            onValueChange = { message = it },
-            label = { Text("Message to send") },
-            modifier = Modifier.fillMaxWidth()
-        )
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { message = it },
+                    label = { Text("Message to send") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                // Disabled until connected and there's something to send.
-                enabled = isConnected && message.isNotBlank(),
-                onClick = {
-                    lastAction = "Sent \"$message\" on $frequency MHz"
-                    message = ""
-                    // TODO: actually transmit this to the radio.
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        enabled = isConnected && message.isNotBlank(),
+                        onClick = {
+                            lastAction = "Sent \"$message\" on $frequency MHz"
+                            message = ""
+                            // TODO: actually transmit this to the radio.
+                        }
+                    ) {
+                        Text("Send")
+                    }
+                    OutlinedButton(
+                        onClick = { lastAction = "Voice input isn't wired up yet." }
+                        // TODO: start Android voice input here.
+                    ) {
+                        Text("Voice")
+                    }
                 }
-            ) {
-                Text("Send")
-            }
-            OutlinedButton(
-                onClick = { lastAction = "Voice input isn't wired up yet." }
-                // TODO: start Android voice input here.
-            ) {
-                Text("Voice")
-            }
-        }
 
-        // Shows the result of the last button press, if any.
-        lastAction?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium)
+                lastAction?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }
 
 /**
- * MONITOR screen — a read-only view of the radio and network status.
- *
- * It reflects the shared connection state passed in from the app shell.
- * The signal/mode values are still placeholders until real hardware is wired up.
+ * MONITOR screen — a read-only dashboard of the radio and network status.
  */
 @Composable
 fun MonitorScreen(
@@ -110,34 +152,41 @@ fun MonitorScreen(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Monitor", style = MaterialTheme.typography.headlineMedium)
-        StatusRow(label = "Radio", value = if (isConnected) "Connected" else "Disconnected")
-        StatusRow(label = "Network", value = if (isConnected) radioAddress else "—")
-        StatusRow(label = "Signal", value = if (isConnected) "-72 dBm" else "0 dBm")
-        StatusRow(label = "Mode", value = if (isConnected) "Listening" else "Idle")
-    }
-}
+        ScreenTitle("Monitor")
 
-/** One "Label ............ value" row used by the Monitor screen. */
-@Composable
-private fun StatusRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
+        ElevatedCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                StatusRow(
+                    label = "Radio",
+                    value = if (isConnected) "Connected" else "Disconnected",
+                    valueColor = if (isConnected) ConnectedGreen else DisconnectedRed
+                )
+                StatusRow(label = "Network", value = if (isConnected) radioAddress else "—")
+                StatusRow(label = "Mode", value = if (isConnected) "Listening" else "Idle")
+
+                // Signal strength shown as a bar instead of just a number.
+                Text("Signal", style = MaterialTheme.typography.bodyLarge)
+                LinearProgressIndicator(
+                    progress = { if (isConnected) 0.72f else 0f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = if (isConnected) "-72 dBm" else "No signal",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
 /**
- * SETTINGS screen — connection settings.
- *
- * The address and connection state are HOISTED (owned by the app shell and
- * passed in), so the Monitor screen sees the same values. This screen reports
- * user actions back up via the `onAddressChange` / `onToggleConnection` callbacks.
+ * SETTINGS screen — connection settings (the only values we'll later save).
  */
 @Composable
 fun SettingsScreen(
@@ -155,33 +204,74 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        ScreenTitle("Settings")
 
-        OutlinedTextField(
-            value = radioAddress,
-            onValueChange = onAddressChange,
-            label = { Text("Radio address") },
-            // Don't allow editing the address while a connection is live.
-            enabled = !isConnected,
-            modifier = Modifier.fillMaxWidth()
-        )
+        ElevatedCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = radioAddress,
+                    onValueChange = onAddressChange,
+                    label = { Text("Radio address") },
+                    enabled = !isConnected,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Auto-connect on startup")
-            Switch(checked = autoConnect, onCheckedChange = { autoConnect = it })
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Auto-connect on startup")
+                    Switch(checked = autoConnect, onCheckedChange = { autoConnect = it })
+                }
+
+                Button(
+                    onClick = onToggleConnection,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isConnected) "Disconnect" else "Connect")
+                }
+
+                Text(
+                    text = if (isConnected) "Connected to $radioAddress" else "Not connected",
+                    color = if (isConnected) ConnectedGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
+    }
+}
 
-        Button(onClick = onToggleConnection) {
-            Text(if (isConnected) "Disconnect" else "Connect")
-        }
+/** Shared big heading at the top of each screen. */
+@Composable
+private fun ScreenTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = FontWeight.Bold
+    )
+}
 
+/** One "Label ............ value" row, with an optional colored value. */
+@Composable
+private fun StatusRow(
+    label: String,
+    value: String,
+    valueColor: Color = Color.Unspecified
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
         Text(
-            text = if (isConnected) "Connected to $radioAddress" else "Not connected",
-            style = MaterialTheme.typography.bodyMedium
+            text = value,
+            color = valueColor,
+            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.bodyLarge
         )
     }
 }
