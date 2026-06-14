@@ -225,7 +225,7 @@ fun MonitorScreen(
                 if (isConnected) {
                     SignalRadar(contacts = contacts, modifier = Modifier.fillMaxWidth())
                     Text(
-                        "Sampling every $scanIntervalSeconds s · simulated data",
+                        "Sampling every $scanIntervalSeconds s · drag to rotate · simulated data",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
