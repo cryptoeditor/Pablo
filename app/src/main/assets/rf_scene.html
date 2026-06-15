@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;}
+  #host{width:100%;height:100%;touch-action:none;}
+  #err{color:#b00;font:13px sans-serif;padding:10px;}
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="three.min.js"></script>
+<script>
+(function(){
+  var host=document.getElementById('host');
+  function fail(msg){host.innerHTML='<div id="err">RF scene: '+msg+'</div>';}
+  if(!window.THREE){fail('three.js did not load');return;}
+
+  try{
+    var w=host.clientWidth||window.innerWidth||300;
+    var h=host.clientHeight||window.innerHeight||300;
+    var scene=new THREE.Scene();
+    var cam=new THREE.PerspectiveCamera(50,w/h,0.1,100);
+    cam.position.set(0,3.6,8); cam.lookAt(0,0,0);
+    var rend=new THREE.WebGLRenderer({alpha:true,antialias:true});
+    rend.setSize(w,h); rend.setPixelRatio(Math.min(window.devicePixelRatio,2)); rend.setClearColor(0x000000,0);
+    host.appendChild(rend.domElement);
+    scene.add(new THREE.AmbientLight(0xffffff,0.75));
+    var dl=new THREE.DirectionalLight(0xffffff,0.85); dl.position.set(5,8,5); scene.add(dl);
+    var world=new THREE.Group(); scene.add(world);
+
+    [2.2,3.4,4.6].forEach(function(r){
+      var pts=[],seg=80,i;
+      for(i=0;i<=seg;i++){var a=i/seg*Math.PI*2;pts.push(new THREE.Vector3(r*Math.cos(a),0,r*Math.sin(a)));}
+      var g=new THREE.BufferGeometry().setFromPoints(pts);
+      world.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0x8a8a93,transparent:true,opacity:0.25})));
+    });
+
+    function place(deg,dist){var a=deg*Math.PI/180;return new THREE.Vector3(dist*Math.cos(a),0.2,dist*Math.sin(a));}
+
+    var fields=[];
+    function clearFields(){fields.forEach(function(f){world.remove(f.mesh);f.geo.dispose();f.mesh.material.dispose();});fields=[];}
+    function buildFields(list){
+      clearFields();
+      list.forEach(function(d){
+        var geo=new THREE.IcosahedronGeometry(d.R,4);
+        var base=geo.attributes.position.array.slice(0);
+        var cnt=geo.attributes.position.count,i;
+        var dirs=new Float32Array(cnt*3);
+        for(i=0;i<cnt;i++){var x=base[i*3],y=base[i*3+1],z=base[i*3+2],l=Math.hypot(x,y,z);dirs[i*3]=x/l;dirs[i*3+1]=y/l;dirs[i*3+2]=z/l;}
+        var mat=new THREE.MeshStandardMaterial({color:new THREE.Color(d.color),transparent:true,opacity:0.4,roughness:0.55,metalness:0.0,side:THREE.DoubleSide,depthWrite:false});
+        var mesh=new THREE.Mesh(geo,mat); mesh.position.copy(place(d.bearing,d.dist)); world.add(mesh);
+        fields.push({geo:geo,base:base,dirs:dirs,cnt:cnt,seed:d.seed,mesh:mesh});
+      });
+    }
+    window.setFields=function(json){try{buildFields(typeof json==='string'?JSON.parse(json):json);}catch(e){}};
+
+    var you=new THREE.Mesh(new THREE.SphereGeometry(0.2,24,24),new THREE.MeshStandardMaterial({color:0x2F6BD8,emissive:0x16386f,roughness:0.4}));
+    world.add(you);
+
+    buildFields([
+      {color:'#2E9E5B',R:1.7,bearing:35,dist:2.0,seed:0.0},
+      {color:'#E0A000',R:1.45,bearing:120,dist:2.4,seed:1.7},
+      {color:'#E0701A',R:1.2,bearing:205,dist:2.5,seed:3.1},
+      {color:'#C2453F',R:1.0,bearing:300,dist:2.8,seed:4.6}
+    ]);
+
+    var t=0,dragging=false,lx=0,ly=0,ry=0.4,rx=0.35;
+    function deform(f){
+      var a=f.geo.attributes.position.array,i;
+      for(i=0;i<f.cnt;i++){
+        var nx=f.dirs[i*3],ny=f.dirs[i*3+1],nz=f.dirs[i*3+2];
+        var disp=1+0.16*Math.sin(1.5*nx*Math.PI+f.seed+t)+0.11*Math.sin(1.9*ny*Math.PI-t*0.7+f.seed)+0.07*Math.sin(2.4*nz*Math.PI+t*0.5);
+        a[i*3]=f.base[i*3]*disp; a[i*3+1]=f.base[i*3+1]*disp; a[i*3+2]=f.base[i*3+2]*disp;
+      }
+      f.geo.attributes.position.needsUpdate=true; f.geo.computeVertexNormals();
+    }
+    function frame(){
+      var cw=host.clientWidth,ch=host.clientHeight;
+      if(cw>0&&ch>0&&(cw!==w||ch!==h)){w=cw;h=ch;cam.aspect=w/h;cam.updateProjectionMatrix();rend.setSize(w,h);}
+      t+=0.012; if(!dragging) ry+=0.0035;
+      world.rotation.y=ry; world.rotation.x=rx;
+      fields.forEach(deform);
+      rend.render(scene,cam);
+      requestAnimationFrame(frame);
+    }
+    frame();
+
+    function down(x,y){dragging=true;lx=x;ly=y;}
+    function move(x,y){if(!dragging)return;ry+=(x-lx)*0.01;rx=Math.max(-0.2,Math.min(1.2,rx+(y-ly)*0.01));lx=x;ly=y;}
+    function up(){dragging=false;}
+    host.addEventListener('pointerdown',function(e){down(e.clientX,e.clientY);});
+    host.addEventListener('pointermove',function(e){move(e.clientX,e.clientY);});
+    host.addEventListener('pointerup',up);
+    host.addEventListener('pointercancel',up);
+  }catch(err){ fail((err&&err.message)?err.message:String(err)); }
+})();
+</script>
+</body>
+</html>
