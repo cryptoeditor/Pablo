@@ -22,9 +22,9 @@ A status badge in the top bar (**Online / Offline**) is always visible, on every
 
 ### The RF propagation map (the centerpiece)
 
-On the **Monitor** screen, once connected, the app shows a **3D map of nearby transmitters**. You sit at the center; each transmitter is drawn as an **irregular, translucent, colored "propagation field"** — a blob whose shape represents how its signal spreads through space (RF propagation is lobed and uneven, not a clean sphere). You can **drag to orbit** the scene.
+On the **Monitor** screen, once connected, the app shows a **live map of nearby transmitters**. Each transmitter is drawn as an **irregular, colored "propagation field"** — a polygon whose shape represents how its signal spreads (RF propagation is lobed and uneven, not a clean circle). The fields **regenerate every N seconds** (the scan-interval slider), so they visibly change shape as the RF environment updates. A **2D / 3D toggle** switches between flat coverage polygons and extruded 3D coverage volumes (height = signal strength).
 
-This 3D view is rendered with **Three.js (WebGL)** running inside a `WebView`. The 3D library is **bundled into the app**, so it works fully offline.
+The map is **MapLibre GL JS** (running in a `WebView`); the RF fields are generated as **KML**, converted to GeoJSON, and drawn as a live-updating map layer. The map engine is bundled into the app; basemap tiles are fetched from OpenStreetMap over the network.
 
 > The propagation shapes are **stylized** for now. The long-term intent: signal **strength** drives each field's size/intensity, and **direction-finding** (when the hardware supports it) drives the shape of the lobes.
 
@@ -41,8 +41,8 @@ The radio is **passive with respect to data** — it passes data while operating
 | Language | Kotlin |
 | UI | Jetpack Compose (Material 3) |
 | Navigation | Material 3 adaptive `NavigationSuiteScaffold` |
-| 3D graphics | Three.js (WebGL) in a `WebView`, bundled offline |
-| Planned map background | MapLibre GL JS (free/open-source) |
+| Map + RF viz | MapLibre GL JS in a `WebView` (bundled); RF fields as KML → GeoJSON layers |
+| Basemap tiles | OpenStreetMap raster (no key; needs network) |
 | Build system | Gradle (version catalog) |
 | Min / target Android | minSdk 24 / targetSdk 36 |
 
@@ -59,13 +59,14 @@ app/src/main/
 │   │                      the shared state, and the background scan loop.
 │   ├── RadioScreens.kt    The three screens (Control / Monitor / Settings)
 │   │                      plus the Online/Offline status badge.
-│   ├── RfFieldView.kt     The WebView that hosts the 3D RF field scene.
+│   ├── RfFieldView.kt     The WebView that hosts the map + RF field scene.
 │   ├── SignalRadar.kt     An older 2D/2.5D radar (no longer used; kept for
 │   │                      reference). Also holds the simulated-data source.
 │   └── ui/theme/          App theme (colors, typography).
 └── assets/
-    ├── rf_scene.html      The Three.js 3D scene (the RF propagation fields).
-    └── three.min.js       Bundled Three.js library (r128, pinned).
+    ├── rf_scene.html      MapLibre map + live KML-driven RF field layer.
+    ├── maplibre-gl.js     Bundled MapLibre GL JS (v4.7.1, pinned).
+    └── maplibre-gl.css    MapLibre styles.
 ```
 
 **How the data flows:** `MainActivity` holds the shared state (connection, address, scan interval, the list of detected radios). While connected, a background loop calls `sampleNearbyRadios()` every few seconds to refresh the data. The screens just *display* that state and report user actions back up (this pattern is called *state hoisting*).
@@ -94,9 +95,11 @@ This is a Windows project — use the `gradlew.bat` wrapper from PowerShell. Mos
 
 - [x] Three-screen UI (Control / Monitor / Settings) with shared state
 - [x] Connection status wired across screens
-- [x] 3D RF propagation fields rendering in-app (Three.js / WebView)
-- [ ] Feed the *real* sampled signal data into the 3D scene (bridge Kotlin → JavaScript)
-- [ ] Add a real geographic map under the fields (MapLibre)
+- [x] RF fields as a live, KML-driven layer on a real map (MapLibre), with a 2D/3D toggle
+- [ ] Feed the *real* sampled signal data into the map layer (bridge Kotlin → JavaScript)
+- [ ] KML export / import for interop (Google Earth, ATAK)
+- [ ] Center the map on the device's real GPS location
+- [ ] Offline basemap tiles (so the app can run air-gapped)
 - [ ] Persist connection settings between launches
 - [ ] Connect to actual SDR hardware (link method — USB / network / Bluetooth — still to be decided)
 - [ ] Voice input on the Control screen
