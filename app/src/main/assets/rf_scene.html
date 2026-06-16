@@ -3,99 +3,135 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link href="maplibre-gl.css" rel="stylesheet">
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;}
-  #host{width:100%;height:100%;touch-action:none;}
+  #map{position:absolute;top:0;bottom:0;left:0;right:0;}
+  #toggle{position:absolute;top:10px;right:10px;z-index:5;
+    font:600 13px sans-serif;padding:8px 14px;border:none;border-radius:18px;
+    background:rgba(33,45,80,0.88);color:#fff;}
   #err{color:#b00;font:13px sans-serif;padding:10px;}
 </style>
 </head>
 <body>
-<div id="host"></div>
-<script src="three.min.js"></script>
+<div id="map"></div>
+<button id="toggle">3D</button>
+<script src="maplibre-gl.js"></script>
 <script>
 (function(){
-  var host=document.getElementById('host');
-  function fail(msg){host.innerHTML='<div id="err">RF scene: '+msg+'</div>';}
-  if(!window.THREE){fail('three.js did not load');return;}
+  var mapDiv=document.getElementById('map');
+  if(!window.maplibregl){mapDiv.innerHTML='<div id="err">MapLibre failed to load</div>';return;}
 
-  try{
-    var w=host.clientWidth||window.innerWidth||300;
-    var h=host.clientHeight||window.innerHeight||300;
-    var scene=new THREE.Scene();
-    var cam=new THREE.PerspectiveCamera(50,w/h,0.1,100);
-    cam.position.set(0,3.6,8); cam.lookAt(0,0,0);
-    var rend=new THREE.WebGLRenderer({alpha:true,antialias:true});
-    rend.setSize(w,h); rend.setPixelRatio(Math.min(window.devicePixelRatio,2)); rend.setClearColor(0x000000,0);
-    host.appendChild(rend.domElement);
-    scene.add(new THREE.AmbientLight(0xffffff,0.75));
-    var dl=new THREE.DirectionalLight(0xffffff,0.85); dl.position.set(5,8,5); scene.add(dl);
-    var world=new THREE.Group(); scene.add(world);
+  var CENTER=[-122.4194,37.7749];
+  function mkField(name,color,bearing,dist,strength,seed){
+    var br=bearing*Math.PI/180;
+    var lat=CENTER[1]+dist*Math.sin(br);
+    var lng=CENTER[0]+dist*Math.cos(br)/Math.cos(CENTER[1]*Math.PI/180);
+    return {name:name,color:color,lng:lng,lat:lat,baseR:0.0011+strength*0.003,height:200+strength*900,seed:seed};
+  }
+  var fields=[
+    mkField('Alpha','#2E9E5B',35,0.004,0.9,0.0),
+    mkField('Bravo','#E0A000',120,0.006,0.7,1.7),
+    mkField('Charlie','#E0701A',205,0.007,0.55,3.1),
+    mkField('Delta','#C2453F',300,0.009,0.4,4.6)
+  ];
 
-    [2.2,3.4,4.6].forEach(function(r){
-      var pts=[],seg=80,i;
-      for(i=0;i<=seg;i++){var a=i/seg*Math.PI*2;pts.push(new THREE.Vector3(r*Math.cos(a),0,r*Math.sin(a)));}
-      var g=new THREE.BufferGeometry().setFromPoints(pts);
-      world.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0x8a8a93,transparent:true,opacity:0.25})));
+  function buildRing(f,t){
+    var N=48,ring=[],latR=f.lat*Math.PI/180,i;
+    for(i=0;i<=N;i++){
+      var th=i/N*Math.PI*2;
+      var r=f.baseR*(1+0.25*Math.sin(3*th+f.seed+t)+0.16*Math.sin(5*th-f.seed+t*0.7)+0.10*Math.sin(7*th+t*0.5));
+      var dLng=r*Math.cos(th)/Math.cos(latR), dLat=r*Math.sin(th);
+      ring.push([f.lng+dLng, f.lat+dLat]);
+    }
+    return ring;
+  }
+
+  function kmlColor(hex,alpha){
+    var a=('0'+alpha.toString(16)).slice(-2);
+    return a+hex.substr(5,2)+hex.substr(3,2)+hex.substr(1,2);
+  }
+  function genKml(list,t){
+    var s='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>';
+    list.forEach(function(f){
+      var ring=buildRing(f,t);
+      var coords=ring.map(function(p){return p[0].toFixed(6)+','+p[1].toFixed(6)+',0';}).join(' ');
+      s+='<Placemark><name>'+f.name+'</name>';
+      s+='<Style><PolyStyle><color>'+kmlColor(f.color,0x66)+'</color><fill>1</fill><outline>1</outline></PolyStyle></Style>';
+      s+='<ExtendedData><Data name="color"><value>'+f.color+'</value></Data><Data name="height"><value>'+Math.round(f.height)+'</value></Data></ExtendedData>';
+      s+='<Polygon><extrude>1</extrude><altitudeMode>relativeToGround</altitudeMode><outerBoundaryIs><LinearRing><coordinates>'+coords+'</coordinates></LinearRing></outerBoundaryIs></Polygon>';
+      s+='</Placemark>';
     });
+    s+='</Document></kml>';
+    return s;
+  }
 
-    function place(deg,dist){var a=deg*Math.PI/180;return new THREE.Vector3(dist*Math.cos(a),0.2,dist*Math.sin(a));}
-
-    var fields=[];
-    function clearFields(){fields.forEach(function(f){world.remove(f.mesh);f.geo.dispose();f.mesh.material.dispose();});fields=[];}
-    function buildFields(list){
-      clearFields();
-      list.forEach(function(d){
-        var geo=new THREE.IcosahedronGeometry(d.R,4);
-        var base=geo.attributes.position.array.slice(0);
-        var cnt=geo.attributes.position.count,i;
-        var dirs=new Float32Array(cnt*3);
-        for(i=0;i<cnt;i++){var x=base[i*3],y=base[i*3+1],z=base[i*3+2],l=Math.hypot(x,y,z);dirs[i*3]=x/l;dirs[i*3+1]=y/l;dirs[i*3+2]=z/l;}
-        var mat=new THREE.MeshStandardMaterial({color:new THREE.Color(d.color),transparent:true,opacity:0.4,roughness:0.55,metalness:0.0,side:THREE.DoubleSide,depthWrite:false});
-        var mesh=new THREE.Mesh(geo,mat); mesh.position.copy(place(d.bearing,d.dist)); world.add(mesh);
-        fields.push({geo:geo,base:base,dirs:dirs,cnt:cnt,seed:d.seed,mesh:mesh});
-      });
-    }
-    window.setFields=function(json){try{buildFields(typeof json==='string'?JSON.parse(json):json);}catch(e){}};
-
-    var you=new THREE.Mesh(new THREE.SphereGeometry(0.2,24,24),new THREE.MeshStandardMaterial({color:0x2F6BD8,emissive:0x16386f,roughness:0.4}));
-    world.add(you);
-
-    buildFields([
-      {color:'#2E9E5B',R:1.7,bearing:35,dist:2.0,seed:0.0},
-      {color:'#E0A000',R:1.45,bearing:120,dist:2.4,seed:1.7},
-      {color:'#E0701A',R:1.2,bearing:205,dist:2.5,seed:3.1},
-      {color:'#C2453F',R:1.0,bearing:300,dist:2.8,seed:4.6}
-    ]);
-
-    var t=0,dragging=false,lx=0,ly=0,ry=0.4,rx=0.35;
-    function deform(f){
-      var a=f.geo.attributes.position.array,i;
-      for(i=0;i<f.cnt;i++){
-        var nx=f.dirs[i*3],ny=f.dirs[i*3+1],nz=f.dirs[i*3+2];
-        var disp=1+0.16*Math.sin(1.5*nx*Math.PI+f.seed+t)+0.11*Math.sin(1.9*ny*Math.PI-t*0.7+f.seed)+0.07*Math.sin(2.4*nz*Math.PI+t*0.5);
-        a[i*3]=f.base[i*3]*disp; a[i*3+1]=f.base[i*3+1]*disp; a[i*3+2]=f.base[i*3+2]*disp;
+  function kmlToGeoJSON(kml){
+    var doc=new DOMParser().parseFromString(kml,'application/xml');
+    function tags(el,name){return el.getElementsByTagNameNS('*',name);}
+    var pms=tags(doc,'Placemark'), feats=[], i, j;
+    for(i=0;i<pms.length;i++){
+      var pm=pms[i];
+      var ce=tags(pm,'coordinates')[0];
+      if(!ce)continue;
+      var ring=ce.textContent.trim().split(/\s+/).map(function(c){var a=c.split(',');return [parseFloat(a[0]),parseFloat(a[1])];});
+      var color='#888888', height=200, datas=tags(pm,'Data');
+      for(j=0;j<datas.length;j++){
+        var nm=datas[j].getAttribute('name');
+        var v=tags(datas[j],'value')[0];
+        v=v?v.textContent:'';
+        if(nm==='color')color=v;
+        if(nm==='height')height=parseFloat(v)||200;
       }
-      f.geo.attributes.position.needsUpdate=true; f.geo.computeVertexNormals();
+      feats.push({type:'Feature',properties:{color:color,height:height},geometry:{type:'Polygon',coordinates:[ring]}});
     }
-    function frame(){
-      var cw=host.clientWidth,ch=host.clientHeight;
-      if(cw>0&&ch>0&&(cw!==w||ch!==h)){w=cw;h=ch;cam.aspect=w/h;cam.updateProjectionMatrix();rend.setSize(w,h);}
-      t+=0.012; if(!dragging) ry+=0.0035;
-      world.rotation.y=ry; world.rotation.x=rx;
-      fields.forEach(deform);
-      rend.render(scene,cam);
-      requestAnimationFrame(frame);
-    }
-    frame();
+    return {type:'FeatureCollection',features:feats};
+  }
 
-    function down(x,y){dragging=true;lx=x;ly=y;}
-    function move(x,y){if(!dragging)return;ry+=(x-lx)*0.01;rx=Math.max(-0.2,Math.min(1.2,rx+(y-ly)*0.01));lx=x;ly=y;}
-    function up(){dragging=false;}
-    host.addEventListener('pointerdown',function(e){down(e.clientX,e.clientY);});
-    host.addEventListener('pointermove',function(e){move(e.clientX,e.clientY);});
-    host.addEventListener('pointerup',up);
-    host.addEventListener('pointercancel',up);
-  }catch(err){ fail((err&&err.message)?err.message:String(err)); }
+  var map=new maplibregl.Map({
+    container:'map',
+    style:{version:8,
+      sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},
+      layers:[{id:'osm',type:'raster',source:'osm'}]},
+    center:CENTER, zoom:13, pitch:50, bearing:-18
+  });
+
+  var t=0, lastKml='', intervalMs=15000, timer=null, mode='3d';
+  var btn=document.getElementById('toggle');
+
+  function updateFields(){
+    t+=0.6;
+    lastKml=genKml(fields,t);
+    var src=map.getSource('rf');
+    if(src)src.setData(kmlToGeoJSON(lastKml));
+  }
+  function startTimer(){ if(timer)clearInterval(timer); timer=setInterval(updateFields,intervalMs); }
+
+  function applyMode(){
+    if(map.getLayer('rf-fill'))map.setLayoutProperty('rf-fill','visibility',mode==='2d'?'visible':'none');
+    if(map.getLayer('rf-extrude'))map.setLayoutProperty('rf-extrude','visibility',mode==='3d'?'visible':'none');
+    map.easeTo({pitch:mode==='3d'?50:0,duration:400});
+    btn.textContent=mode==='3d'?'3D':'2D';
+  }
+  btn.onclick=function(){ mode=(mode==='3d')?'2d':'3d'; applyMode(); };
+
+  window.setMode=function(m){ mode=m; applyMode(); };
+  window.setScanInterval=function(sec){ intervalMs=Math.max(1,sec)*1000; startTimer(); };
+  window.exportKml=function(){ return lastKml; };
+
+  map.on('load',function(){
+    map.addSource('rf',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    map.addLayer({id:'rf-fill',type:'fill',source:'rf',layout:{visibility:'none'},
+      paint:{'fill-color':['get','color'],'fill-opacity':0.5,'fill-outline-color':['get','color']}});
+    map.addLayer({id:'rf-extrude',type:'fill-extrusion',source:'rf',layout:{visibility:'visible'},
+      paint:{'fill-extrusion-color':['get','color'],'fill-extrusion-opacity':0.7,'fill-extrusion-height':['get','height'],'fill-extrusion-base':0}});
+    applyMode();
+    updateFields();
+    startTimer();
+    setTimeout(function(){map.resize();},150);
+  });
+
+  window.addEventListener('resize',function(){map.resize();});
 })();
 </script>
 </body>
